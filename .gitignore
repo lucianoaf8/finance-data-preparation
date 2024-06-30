@@ -1,0 +1,35 @@
+# Environment variables
+.env
+
+# Log files
+logs/
+*.log
+
+# Data files
+data_files/
+
+# Python cache directories
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE and editor settings
+.idea/
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Excel files
+*.xlsx
+
+# Parquet files
+*.parquet
+
+# Other backup and temporary files
+*.bak
+*.tmp
+
+# Zip files
+*.zip
