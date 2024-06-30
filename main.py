@@ -36,15 +36,15 @@ def main():
 
         # Fetch data from both databases
         logger.info('Fetching data from Plaid database...')
-        fetch_all_data(plaid_engine, plaid_tables)
+        plaid_dataframes = fetch_all_data(plaid_engine, plaid_tables)
         logger.info('Fetching data from Finance database...')
-        fetch_all_data(finance_engine, finance_tables)
+        finance_dataframes = fetch_all_data(finance_engine, finance_tables)
         
         logger.info('Starting data cleaning process...')
         
         # Clean data from both databases
-        clean_all_data(plaid_tables)
-        clean_all_data(finance_tables)
+        clean_all_data(plaid_dataframes, plaid_tables)
+        clean_all_data(finance_dataframes, finance_tables)
         
         logger.info('Data cleaning process completed successfully.')
     except Exception as e:

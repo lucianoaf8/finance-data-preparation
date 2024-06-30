@@ -7,15 +7,6 @@ from utils.logging_setup import setup_logging
 # Setup logger
 logger = setup_logging('data_cleaning')
 
-def load_data(table_name):
-    file_path = os.path.join('data', 'fetched_data', f'{table_name}.xlsx')
-    if os.path.exists(file_path):
-        logger.info(f'Loading data from {file_path}...')
-        df = pd.read_excel(file_path)
-    else:
-        raise FileNotFoundError(f"No data file found for {table_name} at {file_path}")
-    return df
-
 def save_cleaned_data(df, table_name):
     file_path = os.path.join('data', 'processed_data', f'{table_name}.xlsx')
     df.to_excel(file_path, index=False)
@@ -28,7 +19,7 @@ def remove_duplicates(df, unique_column):
 
 def handle_missing_values(df, column, default_value):
     logger.info(f'Handling missing values in {column}...')
-    df[column] = df[column].fillna(default_value)
+    df.loc[df[column].isnull(), column] = default_value
     return df
 
 def clean_data(df, table_name):
@@ -39,7 +30,7 @@ def clean_data(df, table_name):
     if table_name == 'plaid_accounts':
         df = remove_duplicates(df, 'account_id')
         df = handle_missing_values(df, 'balance_limit', 0)
-        df = handle_missing_values(df, 'iso_currency_code', 'USD')
+        df = handle_missing_values(df, 'iso_currency_code', 'CAD')
 
     # Add specific cleaning steps for other tables here...
 
@@ -61,7 +52,7 @@ def clean_data(df, table_name):
     if table_name == 'plaid_transactions':
         df = remove_duplicates(df, 'transaction_id')
         df = handle_missing_values(df, 'amount', 0)
-        df = handle_missing_values(df, 'iso_currency_code', 'USD')
+        df = handle_missing_values(df, 'iso_currency_code', 'CAD')
         df = handle_missing_values(df, 'location_lat', 0)
         df = handle_missing_values(df, 'location_lon', 0)
 
@@ -86,7 +77,8 @@ def clean_data(df, table_name):
         df = remove_duplicates(df, 'account_id')
         df = handle_missing_values(df, 'available', 0)
         df = handle_missing_values(df, 'current', 0)
-        df = handle_missing_values(df, 'iso_currency_code', 'USD')
+        df = handle_missing_values(df, 'limit', 0)
+        df = handle_missing_values(df, 'iso_currency_code', 'CAD')
 
     # asset_transaction table
     if table_name == 'asset_transaction':
@@ -114,22 +106,11 @@ def clean_data(df, table_name):
         df = remove_duplicates(df, 'transaction_id')
         df = handle_missing_values(df, 'amount', 0)
 
-    save_cleaned_data(df, table_name)
     logger.info(f'Finished cleaning process for {table_name}.')
     return df
 
-def clean_all_data(tables):
+def clean_all_data(dataframes, tables):
     for table in tables:
-        df = load_data(table)
-        clean_data(df, table)
-
-if __name__ == '__main__':
-    plaid_tables = [
-        'plaid_accounts', 'plaid_liabilities_credit', 'plaid_liabilities_credit_apr',
-        'plaid_transactions', 'plaid_transaction_counterparties', 'asset_report',
-        'asset_item', 'asset_account', 'asset_transaction', 'asset_historical_balance'
-    ]
-    finance_tables = ['mbna_accounts', 'mbna_transactions']
-
-    clean_all_data(plaid_tables)
-    clean_all_data(finance_tables)
+        df = dataframes[table]
+        cleaned_df = clean_data(df, table)
+        save_cleaned_data(cleaned_df, table)

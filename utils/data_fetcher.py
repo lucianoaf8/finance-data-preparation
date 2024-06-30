@@ -2,19 +2,26 @@
 
 import os
 import pandas as pd
-from logging_setup import setup_logging
-from db_connection import get_engine
+from sqlalchemy import create_engine
+from utils.logging_setup import setup_logging
+from utils.db_connection import get_engine
 
 # Setup logger
 logger = setup_logging('data_fetcher')
 
 def fetch_data(engine, table_name):
-    logger.info(f'Fetching data from {table_name}...')
-    query = f'SELECT * FROM {table_name}'
-    df = pd.read_sql(query, engine)
     file_path = os.path.join('data', 'fetched_data', f'{table_name}.xlsx')
-    df.to_excel(file_path, index=False)
-    logger.info(f'Data from {table_name} saved to {file_path}.')
+    
+    if os.path.exists(file_path):
+        logger.info(f'Loading data from existing file {file_path}...')
+        df = pd.read_excel(file_path)
+    else:
+        logger.info(f'Fetching data from {table_name}...')
+        query = f'SELECT * FROM {table_name}'
+        df = pd.read_sql(query, engine)
+        df.to_excel(file_path, index=False)
+        logger.info(f'Data from {table_name} saved to {file_path}.')
+    
     return df
 
 def fetch_all_data(engine, tables):
