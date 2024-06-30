@@ -53,9 +53,14 @@ def clean_plaid_accounts(df):
 
 def clean_plaid_liabilities_credit(df):
     df = clean_strings(df, ['account_id'])
-    df['is_overdue'] = df['is_overdue'].astype(bool)
-    df = clean_numeric(df, ['last_payment_amount', 'last_statement_balance', 'minimum_payment_amount'])
-    df = clean_dates(df, ['last_payment_date', 'last_statement_issue_date', 'next_payment_due_date'])
+    if 'is_overdue' in df.columns:
+        df['is_overdue'] = df['is_overdue'].astype(int).astype(bool)
+    numeric_columns = ['last_payment_amount', 'last_statement_balance', 'minimum_payment_amount']
+    numeric_columns = [col for col in numeric_columns if col in df.columns]
+    df = clean_numeric(df, numeric_columns)
+    date_columns = ['last_payment_date', 'last_statement_issue_date', 'next_payment_due_date']
+    date_columns = [col for col in date_columns if col in df.columns]
+    df = clean_dates(df, date_columns)
     return df
 
 def clean_plaid_liabilities_credit_apr(df):
@@ -134,7 +139,8 @@ def clean_mbna_accounts(df):
     return df
 
 def clean_mbna_transactions(df):
-    df = clean_strings(df, ['payee', 'address'])
+    df = clean_strings(df, ['payeee', 'adrdress'])  # Use the original column names here
+    df.rename(columns={'payeee': 'payee', 'adrdress': 'address'}, inplace=True)  # Rename columns after cleaning
     df = clean_numeric(df, ['amount'])
     df = clean_dates(df, ['posting_date'])
     return df
