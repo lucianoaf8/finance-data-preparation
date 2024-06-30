@@ -58,18 +58,6 @@ def add_monthly_aggregates(df, date_column, id_column, amount_column):
         df = df.merge(monthly_aggregates, on=[id_column, 'year_month'], how='left')
     return df
 
-def add_behavioral_features(df, id_column, merchant_column, category_column, amount_column):
-    logger.info('Adding behavioral features...')
-    if merchant_column in df.columns:
-        most_frequent_merchant = df.groupby(id_column)[merchant_column].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).reset_index()
-        df = df.merge(most_frequent_merchant, on=id_column, how='left', suffixes=('', '_most_frequent'))
-    if category_column in df.columns:
-        most_frequent_category = df.groupby(id_column)[category_column].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).reset_index()
-        df = df.merge(most_frequent_category, on=id_column, how='left', suffixes=('', '_most_frequent'))
-    spending_variance = df.groupby(id_column)[amount_column].var().reset_index(name='spending_variance')
-    df = df.merge(spending_variance, on=id_column, how='left')
-    return df
-
 def add_category_features(df, category_column, amount_column):
     if category_column in df.columns:
         logger.info('Adding category features...')
@@ -79,21 +67,6 @@ def add_category_features(df, category_column, amount_column):
             transaction_count_per_category=(amount_column, 'count')
         ).reset_index()
         df = df.merge(category_aggregates, on=category_column, how='left')
-    return df
-
-def add_holiday_feature(df, date_column, holidays):
-    if date_column in df.columns:
-        logger.info('Adding holiday feature...')
-        df['is_holiday'] = pd.to_datetime(df[date_column]).isin(holidays)
-        df['is_weekend'] = pd.to_datetime(df[date_column]).dt.weekday >= 5
-    return df
-
-def add_geospatial_features(df, postal_code_column, demographics):
-    if postal_code_column in df.columns:
-        logger.info('Adding geospatial features...')
-        df[postal_code_column] = df[postal_code_column].astype(str)
-        demographics[postal_code_column] = demographics[postal_code_column].astype(str)
-        df = df.merge(demographics, on=postal_code_column, how='left')
     return df
 
 def main():
@@ -113,22 +86,12 @@ def main():
         'mbna_transactions': load_data('mbna_transactions.xlsx')
     }
 
-    # Example holiday data and demographics data
-    holidays = pd.to_datetime(['2024-01-01', '2024-12-25'])
-    demographics = pd.DataFrame({
-        'location_postal_code': ['94105', '10001'],
-        'region_demographics': ['Demographics_1', 'Demographics_2']
-    })
-
     # Apply feature engineering and enrichment to each dataset
     for name, df in datasets.items():
         if 'transactions' in name:
             df = add_temporal_features(df, 'date')
             df = add_recency_features(df, 'date', 'account_id')
-            df = add_behavioral_features(df, 'account_id', 'merchant_name', 'category', 'amount')
             df = add_category_features(df, 'category', 'amount')
-            df = add_holiday_feature(df, 'date', holidays)
-            df = add_geospatial_features(df, 'location_postal_code', demographics)
         
         if 'accounts' in name:
             df = add_account_level_aggregates(df, 'account_id', 'current_balance')
