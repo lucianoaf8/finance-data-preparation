@@ -1,0 +1,27 @@
+Transformation Steps
+Loading Data:
+Data is loaded from Excel files located in the data/processed_data directory.
+
+Temporal Features:
+Extracted transaction_hour, transaction_day_of_week, transaction_week_of_year, transaction_month, and transaction_quarter from the date column.
+
+Recency Features:
+Calculated days_since_last_transaction for each account based on the date column.
+
+Aggregate Features:
+Computed total_transactions, total_amount_spent, average_transaction_amount, and max_transaction_amount for each account in the plaid_accounts table.
+Created monthly aggregates such as monthly_total_spent, monthly_transaction_count, and monthly_average_transaction_amount.
+
+Behavioral Features:
+Identified patterns such as most_frequent_merchant and most_frequent_category.
+Calculated spending_variance.
+
+Category Features:
+Computed total_spent_per_category, average_spent_per_category, and transaction_count_per_category in the plaid_transactions table.
+
+Data Enrichment:
+Added is_holiday and is_weekend features based on the date column.
+Integrated demographic data using the location_postal_code column.
+
+Saving Data:
+Enriched data is saved back to Excel files in the data/enriched_data directory.
