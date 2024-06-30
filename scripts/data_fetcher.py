@@ -1,4 +1,4 @@
-# utils/data_fetcher.py
+# scripts/data_fetcher.py
 
 import os
 import pandas as pd
