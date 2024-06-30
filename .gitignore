@@ -5,8 +5,9 @@
 logs/
 *.log
 
-# Data files
+# Data and doc files
 data_files/
+docs/
 
 # Python cache directories
 __pycache__/

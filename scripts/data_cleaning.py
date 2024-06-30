@@ -1,181 +1,193 @@
 # utils/data_cleaning.py
 
 import os
+import sys
 import pandas as pd
+
+# Add the project root to the PYTHONPATH
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from utils.logging_setup import setup_logging
-import numpy as np
 
 # Setup logger
 logger = setup_logging('data_cleaning')
 
-def save_cleaned_data(df, table_name):
-    file_path = os.path.join('data', 'processed_data', f'{table_name}.xlsx')
-    df.to_excel(file_path, index=False)
-    logger.info(f'Cleaned data saved to {file_path}.')
+def load_excel_files(folder_path):
+    files = os.listdir(folder_path)
+    return {file: pd.read_excel(os.path.join(folder_path, file)) for file in files if file.endswith('.xlsx')}
 
-def remove_duplicates(df, unique_column):
-    logger.info(f'Removing duplicates based on {unique_column}...')
-    df = df.drop_duplicates(subset=[unique_column])
+def save_cleaned_file(df, file_name, folder_path):
+    output_path = os.path.join(folder_path, file_name)
+    df.to_excel(output_path, index=False)
+    logger.info(f'Saved cleaned data to {output_path}')
+
+def clean_currency_code(code):
+    valid_codes = ['USD', 'CAD', 'BRL']
+    if code not in valid_codes:
+        return 'CAD'
+    return code
+
+def clean_dates(df, date_columns):
+    for col in date_columns:
+        df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
     return df
 
-def handle_missing_values(df, column, default_value):
-    logger.info(f'Handling missing values in {column}...')
-    df.loc[df[column].isnull(), column] = default_value
+def clean_numeric(df, numeric_columns):
+    for col in numeric_columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     return df
 
-def standardize_addresses(df, address_columns):
-    for column in address_columns:
-        if column in df.columns and df[column].dtype == 'object':
-            logger.info(f'Standardizing address column {column}...')
-            df[column] = df[column].str.strip().str.title()
+def clean_strings(df, string_columns):
+    for col in string_columns:
+        df[col] = df[col].astype(str).str.strip()
     return df
 
-def format_dates(df, date_columns):
-    for column in date_columns:
-        if column in df.columns:
-            logger.info(f'Formatting date column {column}...')
-            df[column] = pd.to_datetime(df[column], errors='coerce').dt.strftime('%Y-%m-%d')
-            df[column] = df[column].replace('NaT', np.nan)
+def clean_plaid_accounts(df):
+    df = clean_strings(df, ['bank_name', 'name', 'official_name', 'type', 'subtype'])
+    df = clean_numeric(df, ['available_balance', 'current_balance', 'balance_limit'])
+    df['iso_currency_code'] = df['iso_currency_code'].str.upper().apply(clean_currency_code)
+    df['unofficial_currency_code'] = df['unofficial_currency_code'].apply(lambda x: None if pd.isnull(x) or len(x) > 10 else x)
+    df['mask'] = df['mask'].astype(str).str.zfill(4)
+    df = clean_dates(df, ['created_at', 'updated_at'])
     return df
 
-def ensure_data_types(df, column_types):
-    for column, dtype in column_types.items():
-        if column in df.columns:
-            logger.info(f'Ensuring data type for column {column} to be {dtype}...')
-            try:
-                df[column] = pd.to_numeric(df[column]) if dtype == 'float' else df[column].astype(dtype)
-            except (ValueError, TypeError) as e:
-                logger.warning(f'Could not convert column {column} to {dtype}: {e}')
+def clean_plaid_liabilities_credit(df):
+    df = clean_strings(df, ['account_id'])
+    df['is_overdue'] = df['is_overdue'].astype(bool)
+    df = clean_numeric(df, ['last_payment_amount', 'last_statement_balance', 'minimum_payment_amount'])
+    df = clean_dates(df, ['last_payment_date', 'last_statement_issue_date', 'next_payment_due_date'])
     return df
 
-def check_referential_integrity(df, foreign_keys):
-    for key, reference_df in foreign_keys.items():
-        if key in df.columns and key in reference_df.columns:
-            logger.info(f'Checking referential integrity for key {key}...')
-            df = df[df[key].isin(reference_df[key])]
+def clean_plaid_liabilities_credit_apr(df):
+    df = clean_strings(df, ['account_id', 'apr_type'])
+    df = clean_numeric(df, ['apr_percentage', 'balance_subject_to_apr', 'interest_charge_amount'])
     return df
 
-def add_derived_columns(df, derived_columns):
-    for new_column, logic in derived_columns.items():
-        logger.info(f'Adding derived column {new_column}...')
-        df[new_column] = df.apply(logic, axis=1)
+def clean_plaid_transactions(df):
+    df = clean_strings(df, [
+        'account_id', 'transaction_id', 'account_owner', 'merchant_entity_id', 'merchant_name', 'name', 'payment_channel', 
+        'pending_transaction_id', 'transaction_code', 'transaction_type', 'category', 'category_id', 
+        'personal_finance_category_confidence_level', 'personal_finance_category_detailed', 
+        'personal_finance_category_primary', 'location_address', 'location_city', 'location_region', 
+        'location_postal_code', 'location_country', 'location_store_number', 'payment_meta_reference_number', 
+        'payment_meta_ppd_id', 'payment_meta_payee', 'payment_meta_by_order_of', 'payment_meta_payer', 
+        'payment_meta_payment_method', 'payment_meta_payment_processor', 'payment_meta_reason'
+    ])
+    df = clean_numeric(df, ['amount', 'location_lat', 'location_lon'])
+    df['iso_currency_code'] = df['iso_currency_code'].str.upper().apply(clean_currency_code)
+    df['unofficial_currency_code'] = df['unofficial_currency_code'].apply(lambda x: None if pd.isnull(x) or len(x) > 10 else x)
+    df = clean_dates(df, ['authorized_date', 'authorized_datetime', 'date', 'datetime'])
+    df['pending'] = df['pending'].astype(bool)
     return df
 
-def clean_data(df, table_name):
-    logger.info(f'Starting cleaning process for {table_name}...')
-
-    # Date formatting and consistency
-    date_columns = ['created_at', 'updated_at', 'last_payment_date', 'last_statement_issue_date', 'next_payment_due_date', 'authorized_date', 'date', 'datetime', 'posting_date']
-    df = format_dates(df, date_columns)
-
-    # Data type consistency
-    column_types = {
-        'amount': 'float',
-        'balance_limit': 'float',
-        'current_balance': 'float',
-        'available_balance': 'float',
-        'iso_currency_code': 'str'
-    }
-    df = ensure_data_types(df, column_types)
-
-    # Standardize address and location data
-    address_columns = ['location_address', 'location_city', 'location_postal_code']
-    df = standardize_addresses(df, address_columns)
-
-    # Example for plaid_accounts
-    if table_name == 'plaid_accounts':
-        df = remove_duplicates(df, 'account_id')
-        df = handle_missing_values(df, 'balance_limit', 0)
-        df = handle_missing_values(df, 'iso_currency_code', 'CAD')
-
-    # Add specific cleaning steps for other tables here...
-
-    # plaid_liabilities_credit table
-    if table_name == 'plaid_liabilities_credit':
-        df = remove_duplicates(df, 'account_id')
-        df = handle_missing_values(df, 'last_payment_amount', 0)
-        df = handle_missing_values(df, 'last_statement_balance', 0)
-        df = handle_missing_values(df, 'minimum_payment_amount', 0)
-
-    # plaid_liabilities_credit_apr table
-    if table_name == 'plaid_liabilities_credit_apr':
-        df = remove_duplicates(df, 'account_id')
-        df = handle_missing_values(df, 'apr_percentage', 0)
-        df = handle_missing_values(df, 'balance_subject_to_apr', 0)
-        df = handle_missing_values(df, 'interest_charge_amount', 0)
-
-    # plaid_transactions table
-    if table_name == 'plaid_transactions':
-        df = remove_duplicates(df, 'transaction_id')
-        df = handle_missing_values(df, 'amount', 0)
-        df = handle_missing_values(df, 'iso_currency_code', 'CAD')
-        df = handle_missing_values(df, 'location_lat', 0)
-        df = handle_missing_values(df, 'location_lon', 0)
-
-    # plaid_transaction_counterparties table
-    if table_name == 'plaid_transaction_counterparties':
-        df = remove_duplicates(df, 'transaction_id')
-        df = handle_missing_values(df, 'name', 'Unknown')
-        df = handle_missing_values(df, 'type', 'Unknown')
-        df = handle_missing_values(df, 'confidence_level', 'low')
-
-    # asset_report table
-    if table_name == 'asset_report':
-        df = remove_duplicates(df, 'asset_report_id')
-        df = handle_missing_values(df, 'json_file', '{}')
-
-    # asset_item table
-    if table_name == 'asset_item':
-        df = remove_duplicates(df, 'item_id')
-
-    # asset_account table
-    if table_name == 'asset_account':
-        df = remove_duplicates(df, 'account_id')
-        df = handle_missing_values(df, 'available', 0)
-        df = handle_missing_values(df, 'current', 0)
-        df = handle_missing_values(df, 'limit', 0)
-        df = handle_missing_values(df, 'iso_currency_code', 'CAD')
-
-    # asset_transaction table
-    if table_name == 'asset_transaction':
-        df = remove_duplicates(df, 'transaction_id')
-        df = handle_missing_values(df, 'amount', 0)
-
-    # asset_historical_balance table
-    if table_name == 'asset_historical_balance':
-        df = remove_duplicates(df, 'balance_id')
-        df = handle_missing_values(df, 'current', 0)
-
-    # mbna_accounts table
-    if table_name == 'mbna_accounts':
-        df = remove_duplicates(df, 'id')
-        df = handle_missing_values(df, 'credit_limit', 0)
-        df = handle_missing_values(df, 'cash_advance_limit', 0)
-        df = handle_missing_values(df, 'credit_available', 0)
-        df = handle_missing_values(df, 'cash_advance_available', 0)
-        df = handle_missing_values(df, 'annual_interest_rate_purchases', 0)
-        df = handle_missing_values(df, 'annual_interest_rate_balance_transfers', 0)
-        df = handle_missing_values(df, 'annual_interest_rate_cash_advances', 0)
-
-    # mbna_transactions table
-    if table_name == 'mbna_transactions':
-        df = remove_duplicates(df, 'transaction_id')
-        df = handle_missing_values(df, 'amount', 0)
-
-    # Referential integrity checks (example)
-    if table_name == 'plaid_transactions':
-        plaid_accounts_df = pd.read_excel(os.path.join('data', 'fetched_data', 'plaid_accounts.xlsx'))
-        df = check_referential_integrity(df, {'account_id': plaid_accounts_df})
-
-    # Add derived columns (example)
-    if table_name == 'plaid_transactions':
-        df = add_derived_columns(df, {'day_of_week': lambda row: pd.Timestamp(row['date']).day_name()})
-
-    logger.info(f'Finished cleaning process for {table_name}.')
+def clean_plaid_transaction_counterparties(df):
+    df = clean_strings(df, ['transaction_id', 'name', 'type', 'website', 'logo_url', 'confidence_level', 'entity_id', 'phone_number'])
     return df
 
-def clean_all_data(dataframes, tables):
-    for table in tables:
-        df = dataframes[table]
-        cleaned_df = clean_data(df, table)
-        save_cleaned_data(cleaned_df, table)
+def clean_categories(df):
+    df = clean_strings(df, ['category_group', 'hierarchy_level1', 'hierarchy_level2', 'hierarchy_level3'])
+    return df
+
+def clean_asset_report(df):
+    df = clean_strings(df, ['asset_report_id', 'client_report_id'])
+    df = clean_dates(df, ['date_generated', 'created_at'])
+    df['days_requested'] = df['days_requested'].apply(lambda x: x if x > 0 else None)
+    df['file_path'] = df['file_path'].apply(lambda x: x if pd.notnull(x) and len(x) <= 255 else None)
+    df['json_file'] = df['json_file'].apply(lambda x: x if pd.notnull(x) else '{}')
+    return df
+
+def clean_asset_item(df):
+    df = clean_strings(df, ['institution_name', 'item_id', 'asset_report_id'])
+    df = clean_dates(df, ['date_last_updated'])
+    return df
+
+def clean_asset_account(df):
+    df = clean_strings(df, ['account_id', 'name', 'official_name', 'type', 'subtype', 'item_id', 'asset_report_id'])
+    df = clean_numeric(df, ['available', 'current', 'limit', 'margin_loan_amount'])
+    df['iso_currency_code'] = df['iso_currency_code'].str.upper().apply(clean_currency_code)
+    df['unofficial_currency_code'] = df['unofficial_currency_code'].apply(lambda x: None if pd.isnull(x) or len(x) > 10 else x)
+    return df
+
+def clean_asset_transaction(df):
+    df = clean_strings(df, ['transaction_id', 'account_id', 'original_description', 'asset_report_id'])
+    df = clean_numeric(df, ['amount'])
+    df['iso_currency_code'] = df['iso_currency_code'].str.upper().apply(clean_currency_code)
+    df['unofficial_currency_code'] = df['unofficial_currency_code'].apply(lambda x: None if pd.isnull(x) or len(x) > 10 else x)
+    df = clean_dates(df, ['date'])
+    return df
+
+def clean_asset_historical_balance(df):
+    df = clean_strings(df, ['account_id', 'asset_report_id'])
+    df = clean_numeric(df, ['current'])
+    df['iso_currency_code'] = df['iso_currency_code'].str.upper().apply(clean_currency_code)
+    df['unofficial_currency_code'] = df['unofficial_currency_code'].apply(lambda x: None if pd.isnull(x) or len(x) > 10 else x)
+    df = clean_dates(df, ['date'])
+    return df
+
+def clean_mbna_accounts(df):
+    df = clean_strings(df, ['cardholder_name', 'account_number'])
+    df = clean_numeric(df, ['credit_limit', 'cash_advance_limit', 'credit_available', 'cash_advance_available'])
+    df = clean_dates(df, ['statement_closing_date'])
+    df['annual_interest_rate_purchases'] = df['annual_interest_rate_purchases'].apply(lambda x: x if 0 <= x <= 100 else None)
+    df['annual_interest_rate_balance_transfers'] = df['annual_interest_rate_balance_transfers'].apply(lambda x: x if 0 <= x <= 100 else None)
+    df['annual_interest_rate_cash_advances'] = df['annual_interest_rate_cash_advances'].apply(lambda x: x if 0 <= x <= 100 else None)
+    return df
+
+def clean_mbna_transactions(df):
+    df = clean_strings(df, ['payee', 'address'])
+    df = clean_numeric(df, ['amount'])
+    df = clean_dates(df, ['posting_date'])
+    return df
+
+def clean_data(input_folder_path, output_folder_path):
+    dataframes = load_excel_files(input_folder_path)
+    
+    for file, df in dataframes.items():
+        if 'plaid_accounts' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_plaid_accounts(df)
+        elif 'plaid_liabilities_credit' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_plaid_liabilities_credit(df)
+        elif 'plaid_liabilities_credit_apr' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_plaid_liabilities_credit_apr(df)
+        elif 'plaid_transactions' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_plaid_transactions(df)
+        elif 'plaid_transaction_counterparties' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_plaid_transaction_counterparties(df)
+        elif 'categories' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_categories(df)
+        elif 'asset_report' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_asset_report(df)
+        elif 'asset_item' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_asset_item(df)
+        elif 'asset_account' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_asset_account(df)
+        elif 'asset_transaction' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_asset_transaction(df)
+        elif 'asset_historical_balance' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_asset_historical_balance(df)
+        elif 'mbna_accounts' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_mbna_accounts(df)
+        elif 'mbna_transactions' in file:
+            logger.info(f'Cleaning {file}')
+            dataframes[file] = clean_mbna_transactions(df)
+
+        # Save the cleaned dataframe back to Excel
+        save_cleaned_file(dataframes[file], f'cleaned_{file}', output_folder_path)
+
+if __name__ == '__main__':
+    input_folder_path = 'data/fetched_data'
+    output_folder_path = 'data/cleaned_data'
+    os.makedirs(output_folder_path, exist_ok=True)
+    clean_data(input_folder_path, output_folder_path)
