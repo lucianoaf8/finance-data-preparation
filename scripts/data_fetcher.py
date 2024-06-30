@@ -1,8 +1,13 @@
 # scripts/data_fetcher.py
 
 import os
+import sys
 import pandas as pd
 from sqlalchemy import create_engine
+
+# Add the project root to the PYTHONPATH
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from utils.logging_setup import setup_logging
 from utils.db_connection import get_engine
 
@@ -10,7 +15,7 @@ from utils.db_connection import get_engine
 logger = setup_logging('data_fetcher')
 
 def fetch_data(engine, table_name):
-    file_path = os.path.join('data', 'fetched_data', f'{table_name}.xlsx')
+    file_path = os.path.join('data_files', 'fetched', f'{table_name}.xlsx')
     
     if os.path.exists(file_path):
         logger.info(f'Loading data from existing file {file_path}...')

@@ -74,7 +74,7 @@ def process_files(input_folder_path, output_folder_path):
             dataframes[file], removed_count = remove_duplicates(df, ['account_id', 'transaction_id'])
 
         # Save the deduplicated dataframe back to Excel
-        save_cleaned_file(dataframes[file], f'deduped_{file}', output_folder_path)
+        save_cleaned_file(dataframes[file], file, output_folder_path)
         
         # Add to report data
         report_data.append([file, removed_count])
@@ -87,7 +87,7 @@ def process_files(input_folder_path, output_folder_path):
     logger.info(f'Report saved to {report_output_path}')
 
 if __name__ == '__main__':
-    input_folder_path = 'data/cleaned_data'
-    output_folder_path = 'data/dupes_removed_data'
+    input_folder_path = 'data_files/cleaned'
+    output_folder_path = 'data_files/dupes_removed'
     os.makedirs(output_folder_path, exist_ok=True)
     process_files(input_folder_path, output_folder_path)

@@ -1,4 +1,4 @@
-# utils/data_cleaning.py
+# scripts/data_cleaning.py
 
 import os
 import sys
@@ -190,10 +190,10 @@ def clean_data(input_folder_path, output_folder_path):
             dataframes[file] = clean_mbna_transactions(df)
 
         # Save the cleaned dataframe back to Excel
-        save_cleaned_file(dataframes[file], f'cleaned_{file}', output_folder_path)
+        save_cleaned_file(dataframes[file], file, output_folder_path)
 
 if __name__ == '__main__':
-    input_folder_path = 'data/fetched_data'
-    output_folder_path = 'data/cleaned_data'
+    input_folder_path = 'data_files/fetched'
+    output_folder_path = 'data_files/cleaned'
     os.makedirs(output_folder_path, exist_ok=True)
     clean_data(input_folder_path, output_folder_path)
