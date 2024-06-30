@@ -1,103 +1,132 @@
-# utils/feature_engineering.py
+# scripts/feature_engineering.py
 
 import os
+import sys
 import pandas as pd
-import numpy as np
-from logging_setup import setup_logging
+
+# Add the project root to the PYTHONPATH to ensure the script can find the utils module
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from utils.logging_setup import setup_logging
 
 # Setup logger
 logger = setup_logging('feature_engineering')
 
-def load_data(file_name):
-    file_path = os.path.join('data', 'processed_data', file_name)
-    return pd.read_excel(file_path)
+def load_excel_files(folder_path):
+    files = os.listdir(folder_path)
+    return {file: pd.read_excel(os.path.join(folder_path, file)) for file in files if file.endswith('.xlsx')}
 
-def save_data(df, file_name):
-    file_path = os.path.join('data', 'enriched_data', file_name)
-    df.to_excel(file_path, index=False)
-    logger.info(f'Enriched data saved to {file_path}.')
+def save_featured_file(df, file_name, folder_path):
+    output_path = os.path.join(folder_path, file_name)
+    df.to_excel(output_path, index=False)
+    logger.info(f'Saved featured data to {output_path}')
 
-def add_temporal_features(df, date_column):
-    if date_column in df.columns:
-        logger.info('Adding temporal features...')
-        df['transaction_hour'] = pd.to_datetime(df[date_column]).dt.hour
-        df['transaction_day_of_week'] = pd.to_datetime(df[date_column]).dt.day_name()
-        df['transaction_week_of_year'] = pd.to_datetime(df[date_column]).dt.isocalendar().week
-        df['transaction_month'] = pd.to_datetime(df[date_column]).dt.month
-        df['transaction_quarter'] = pd.to_datetime(df[date_column]).dt.quarter
+def add_row_features(df, table_name):
+    current_date = pd.to_datetime('now')
+    if table_name == 'plaid_accounts':
+        df['balance_to_limit_ratio'] = df['current_balance'] / df['balance_limit']
+        df['available_to_current_balance_ratio'] = df['available_balance'] / df['current_balance']
+        df['account_age'] = (current_date - pd.to_datetime(df['created_at'])).dt.days
+
+    elif table_name == 'plaid_liabilities_credit':
+        df['days_since_last_payment'] = (current_date - pd.to_datetime(df['last_payment_date'])).dt.days
+        df['days_since_last_statement'] = (current_date - pd.to_datetime(df['last_statement_issue_date'])).dt.days
+        df['days_to_next_payment_due'] = (pd.to_datetime(df['next_payment_due_date']) - current_date).dt.days
+        df['is_recently_overdue'] = df['days_since_last_payment'] <= 30
+
+    elif table_name == 'plaid_liabilities_credit_apr':
+        df['interest_cost_per_dollar'] = df['apr_percentage'] * df['balance_subject_to_apr'] / 100
+        df['annual_interest_cost'] = df['balance_subject_to_apr'] * df['apr_percentage'] / 100
+
+    elif table_name == 'plaid_transactions':
+        df['transaction_hour'] = pd.to_datetime(df['datetime']).dt.hour
+        df['transaction_day_of_week'] = pd.to_datetime(df['datetime']).dt.dayofweek
+        df['transaction_month'] = pd.to_datetime(df['datetime']).dt.month
+
+    elif table_name == 'asset_report':
+        df['report_age'] = (current_date - pd.to_datetime(df['date_generated'])).dt.days
+        df['days_requested_normalized'] = (df['days_requested'] - df['days_requested'].mean()) / df['days_requested'].std()
+
+    elif table_name == 'asset_item':
+        df['days_since_last_update'] = (current_date - pd.to_datetime(df['date_last_updated'])).dt.days
+
+    elif table_name == 'asset_account':
+        df['balance_to_limit_ratio'] = df['current'] / df['limit']
+        df['available_to_current_balance_ratio'] = df['available'] / df['current']
+        df['account_age'] = (current_date - pd.to_datetime(df['created_at'])).dt.days
+
+    elif table_name == 'asset_transaction':
+        df['transaction_hour'] = pd.to_datetime(df['date']).dt.hour
+        df['transaction_day_of_week'] = pd.to_datetime(df['date']).dt.dayofweek
+        df['transaction_month'] = pd.to_datetime(df['date']).dt.month
+
+    elif table_name == 'asset_historical_balance':
+        df['rolling_avg_7d'] = df['current'].rolling(window=7).mean()
+        df['rolling_avg_30d'] = df['current'].rolling(window=30).mean()
+        df['balance_volatility_7d'] = df['current'].rolling(window=7).std()
+        df['balance_volatility_30d'] = df['current'].rolling(window=30).std()
+
+    elif table_name == 'mbna_accounts':
+        df['credit_utilization_ratio'] = df['credit_available'] / df['credit_limit']
+        df['cash_advance_utilization_ratio'] = df['cash_advance_available'] / df['cash_advance_limit']
+        df['account_age'] = (current_date - pd.to_datetime(df['statement_closing_date'])).dt.days
+
+    elif table_name == 'mbna_transactions':
+        df['transaction_hour'] = pd.to_datetime(df['posting_date']).dt.hour
+        df['transaction_day_of_week'] = pd.to_datetime(df['posting_date']).dt.dayofweek
+        df['transaction_month'] = pd.to_datetime(df['posting_date']).dt.month
+
     return df
 
-def add_recency_features(df, date_column, id_column):
-    if date_column in df.columns:
-        logger.info('Adding recency features...')
-        df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
-        df['days_since_last_transaction'] = df.groupby(id_column)[date_column].diff().dt.days.fillna(0)
-    return df
-
-def add_account_level_aggregates(df, id_column, amount_column):
-    if id_column in df.columns:
-        logger.info('Adding account-level aggregates...')
-        aggregates = df.groupby(id_column).agg(
-            total_transactions=(amount_column, 'count'),
-            total_amount_spent=(amount_column, 'sum'),
-            average_transaction_amount=(amount_column, 'mean'),
-            max_transaction_amount=(amount_column, 'max')
+def create_aggregate_features(df, table_name, output_folder_path):
+    if table_name == 'plaid_transactions':
+        agg_features = df.groupby('account_id').agg(
+            transaction_count=pd.NamedAgg(column='transaction_id', aggfunc='count'),
+            total_amount=pd.NamedAgg(column='amount', aggfunc='sum'),
+            avg_transaction_amount=pd.NamedAgg(column='amount', aggfunc='mean'),
+            max_transaction_amount=pd.NamedAgg(column='amount', aggfunc='max'),
+            min_transaction_amount=pd.NamedAgg(column='amount', aggfunc='min'),
+            pending_transaction_count=pd.NamedAgg(column='pending', aggfunc='sum')
         ).reset_index()
-        df = df.merge(aggregates, on=id_column, how='left')
-    return df
+        save_featured_file(agg_features, 'added_feature_transactions_aggregate.xlsx', output_folder_path)
 
-def add_monthly_aggregates(df, date_column, id_column, amount_column):
-    if date_column in df.columns:
-        logger.info('Adding monthly aggregates...')
-        df['year_month'] = pd.to_datetime(df[date_column]).dt.to_period('M')
-        monthly_aggregates = df.groupby([id_column, 'year_month']).agg(
-            monthly_total_spent=(amount_column, 'sum'),
-            monthly_transaction_count=(amount_column, 'count'),
-            monthly_average_transaction_amount=(amount_column, 'mean')
+    elif table_name == 'asset_transaction':
+        agg_features = df.groupby('account_id').agg(
+            transaction_count=pd.NamedAgg(column='transaction_id', aggfunc='count'),
+            total_interest_paid=pd.NamedAgg(column='amount', aggfunc=lambda x: x[x > 0].sum()),
+            avg_transaction_amount=pd.NamedAgg(column='amount', aggfunc='mean'),
+            max_transaction_amount=pd.NamedAgg(column='amount', aggfunc='max'),
+            min_transaction_amount=pd.NamedAgg(column='amount', aggfunc='min')
         ).reset_index()
-        df = df.merge(monthly_aggregates, on=[id_column, 'year_month'], how='left')
-    return df
+        save_featured_file(agg_features, 'added_feature_asset_transactions_aggregate.xlsx', output_folder_path)
 
-def add_category_features(df, category_column, amount_column):
-    if category_column in df.columns:
-        logger.info('Adding category features...')
-        category_aggregates = df.groupby(category_column).agg(
-            total_spent_per_category=(amount_column, 'sum'),
-            average_spent_per_category=(amount_column, 'mean'),
-            transaction_count_per_category=(amount_column, 'count')
+    elif table_name == 'plaid_transactions':
+        # Spending Categories
+        categories = ['shopping', 'groceries']  # Example categories
+        for category in categories:
+            category_col = f'total_{category}_spent'
+            df[category_col] = df.apply(lambda row: row['amount'] if row['category'] == category else 0, axis=1)
+        agg_features = df.groupby('account_id').agg(
+            **{f'total_{category}_spent': pd.NamedAgg(column=f'total_{category}_spent', aggfunc='sum') for category in categories}
         ).reset_index()
-        df = df.merge(category_aggregates, on=category_column, how='left')
-    return df
+        save_featured_file(agg_features, 'added_feature_transactions_category_spending.xlsx', output_folder_path)
 
-def main():
-    # Load all datasets
-    datasets = {
-        'plaid_transactions': load_data('plaid_transactions.xlsx'),
-        'plaid_accounts': load_data('plaid_accounts.xlsx'),
-        'plaid_liabilities_credit': load_data('plaid_liabilities_credit.xlsx'),
-        'plaid_liabilities_credit_apr': load_data('plaid_liabilities_credit_apr.xlsx'),
-        'plaid_transaction_counterparties': load_data('plaid_transaction_counterparties.xlsx'),
-        'asset_report': load_data('asset_report.xlsx'),
-        'asset_item': load_data('asset_item.xlsx'),
-        'asset_account': load_data('asset_account.xlsx'),
-        'asset_transaction': load_data('asset_transaction.xlsx'),
-        'asset_historical_balance': load_data('asset_historical_balance.xlsx'),
-        'mbna_accounts': load_data('mbna_accounts.xlsx'),
-        'mbna_transactions': load_data('mbna_transactions.xlsx')
-    }
-
-    # Apply feature engineering and enrichment to each dataset
-    for name, df in datasets.items():
-        if 'transactions' in name:
-            df = add_temporal_features(df, 'date')
-            df = add_recency_features(df, 'date', 'account_id')
-            df = add_category_features(df, 'category', 'amount')
+def process_files(input_folder_path, output_folder_path):
+    dataframes = load_excel_files(input_folder_path)
+    os.makedirs(output_folder_path, exist_ok=True)
+    
+    for file, df in dataframes.items():
+        table_name = file.split('.')[0]  # assuming the table name is the filename without extension
+        logger.info(f'Adding features to {file}')
+        df = add_row_features(df, table_name)
         
-        if 'accounts' in name:
-            df = add_account_level_aggregates(df, 'account_id', 'current_balance')
-            df = add_monthly_aggregates(df, 'date', 'account_id', 'current_balance')
+        # Save the enhanced dataframe back to Excel
+        save_featured_file(df, f'{table_name}.xlsx', output_folder_path)
 
-        save_data(df, f'{name}_enriched.xlsx')
+        # Create and save aggregated features if applicable
+        create_aggregate_features(df, table_name, output_folder_path)
 
 if __name__ == '__main__':
-    main()
+    input_folder_path = 'data/dupes_removed_data'
+    output_folder_path = 'data/featured_added_data'
+    process_files(input_folder_path, output_folder_path)
