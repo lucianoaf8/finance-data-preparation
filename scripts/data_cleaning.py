@@ -2,11 +2,9 @@
 import pandas as pd
 import numpy as np
 import logging
+from sklearn.impute import KNNImputer
 
 def handle_missing_values(df):
-    """
-    Identify and handle missing values in the dataset.
-    """
     try:
         # Identify columns with missing data
         missing_data = df.isnull().sum()
@@ -14,12 +12,14 @@ def handle_missing_values(df):
         for col, count in missing_data[missing_data > 0].items():
             logging.info(f"{col}: {count}")
         
-        # For this example, we'll fill numeric columns with median and categorical with mode
+        # Fill numeric columns with median
         numeric_columns = df.select_dtypes(include=[np.number]).columns
-        categorical_columns = df.select_dtypes(include=['object']).columns
-        
         df[numeric_columns] = df[numeric_columns].fillna(df[numeric_columns].median())
-        df[categorical_columns] = df[categorical_columns].fillna(df[categorical_columns].mode().iloc[0])
+        
+        # Fill categorical columns with mode, converting to string first
+        categorical_columns = df.select_dtypes(include=['object']).columns
+        for col in categorical_columns:
+            df[col] = df[col].astype(str).fillna(df[col].astype(str).mode().iloc[0])
         
         logging.info("Missing values handled successfully")
         return df
@@ -75,3 +75,20 @@ def standardize_categories(df):
     except Exception as e:
         logging.error(f"Error standardizing categories: {str(e)}")
         raise
+    
+def advanced_imputation(df):
+    # Separate numeric and categorical columns
+    numeric_columns = df.select_dtypes(include=[np.number]).columns
+    categorical_columns = df.select_dtypes(include=['object']).columns
+
+    # KNN imputation for numeric columns
+    imputer = KNNImputer(n_neighbors=5)
+    df[numeric_columns] = imputer.fit_transform(df[numeric_columns])
+
+    # Mode imputation for categorical columns
+    for col in categorical_columns:
+        df[col] = df[col].fillna(df[col].mode().iloc[0])
+
+    return df
+
+# Call this function in handle_missing_values
