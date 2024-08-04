@@ -38,7 +38,10 @@ def correct_data_types(df):
         # Ensure numeric fields are in appropriate formats
         numeric_columns = ['transaction_amount', 'account_current_balance', 'account_limit']
         for col in numeric_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            else:
+                logging.warning(f"Column '{col}' not found in the DataFrame. Skipping conversion.")
         
         logging.info("Data types corrected successfully")
         return df

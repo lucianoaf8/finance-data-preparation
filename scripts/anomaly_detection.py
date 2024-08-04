@@ -8,6 +8,10 @@ def detect_anomalies(df):
     Implement basic anomaly detection and flag potential fraudulent activities.
     """
     try:
+        if 'transaction_amount' not in df.columns:
+            logging.warning("'transaction_amount' column not found. Skipping anomaly detection.")
+            return df
+
         # Z-score method for transaction amounts
         z_scores = np.abs(stats.zscore(df['transaction_amount']))
         df['is_amount_anomaly'] = z_scores > 3

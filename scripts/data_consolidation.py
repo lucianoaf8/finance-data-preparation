@@ -11,7 +11,7 @@ def consolidate_data(df):
         column_mapping = {
             'account_name': 'account_name',
             'transaction_date': 'transaction_date',
-            'transaction_amount': 'amount',
+            'amount': 'transaction_amount',  # Ensure 'amount' is mapped to 'transaction_amount'
             # Add more mappings as needed
         }
         df = df.rename(columns=column_mapping)

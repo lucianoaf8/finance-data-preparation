@@ -33,7 +33,7 @@ def encode_categorical_variables(df):
     try:
         # One-hot encoding for account types and transaction categories
         onehot_columns = ['account_type', 'personal_finance_category_primary']
-        onehot_encoder = OneHotEncoder(sparse=False, handle_unknown='ignore')
+        onehot_encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
         onehot_encoded = onehot_encoder.fit_transform(df[onehot_columns])
         onehot_columns_names = onehot_encoder.get_feature_names(onehot_columns)
         onehot_df = pd.DataFrame(onehot_encoded, columns=onehot_columns_names, index=df.index)
@@ -50,17 +50,22 @@ def encode_categorical_variables(df):
     except Exception as e:
         logging.error(f"Error encoding categorical variables: {str(e)}")
         raise
-
+    
 def normalize_numerical_features(df):
     """
     Normalize numerical features using StandardScaler.
     """
     try:
         numeric_columns = ['transaction_amount', 'account_current_balance', 'account_limit']
-        scaler = StandardScaler()
-        df[numeric_columns] = scaler.fit_transform(df[numeric_columns])
+        columns_to_normalize = [col for col in numeric_columns if col in df.columns]
         
-        logging.info("Numerical features normalized successfully")
+        if columns_to_normalize:
+            scaler = StandardScaler()
+            df[columns_to_normalize] = scaler.fit_transform(df[columns_to_normalize])
+            logging.info("Numerical features normalized successfully")
+        else:
+            logging.warning("No numeric columns found for normalization")
+        
         return df
     except Exception as e:
         logging.error(f"Error normalizing numerical features: {str(e)}")
